@@ -28,6 +28,9 @@ INSTALL_DIR = os.path.join(os.environ.get("LOCALAPPDATA", HOME), "Programs", "AI
 # v1 was installed as "AI Limitleri": cleaned up on install
 OLD_INSTALL_DIR = os.path.join(os.environ.get("LOCALAPPDATA", HOME), "Programs", "AILimitleri")
 FROZEN = getattr(sys, "frozen", False)
+# Renew expired Claude Code / Codex sign-ins and save them back. The user
+# chooses this in the installer and in Settings ("Keep sign-ins fresh").
+RENEW_SIGNINS = True
 
 
 class NotInstalled(Exception):
@@ -157,6 +160,8 @@ def fetch_claude():
     oauth = json.load(open(path, encoding="utf-8"))["claudeAiOauth"]
     exp = oauth.get("expiresAt")
     if exp and exp / 1000 < time.time() + 300:
+        if not RENEW_SIGNINS:
+            raise RuntimeError("Claude sign-in expired — open Claude Code once")
         oauth = _refresh_claude(path)       # no need to open Claude Code
     data = http_json(
         "https://api.anthropic.com/api/oauth/usage",
@@ -256,7 +261,8 @@ def _codex_usage(home, owned):
     exp = _jwt_claims(t["access_token"]).get("exp", 0)
     # our own extra accounts: refresh early; the main Codex sign-in only once it
     # has expired (the Codex CLI refreshes it itself while you use it)
-    if (owned and exp < time.time() + 3600) or (not owned and exp < time.time() + 120):
+    if (owned and exp < time.time() + 3600) or \
+            (not owned and RENEW_SIGNINS and exp < time.time() + 120):
         _refresh_codex_token(home, auth)
     return http_json(
         "https://chatgpt.com/backend-api/wham/usage",
@@ -672,10 +678,83 @@ def _remove_old_version():
         pass
 
 
+def install_dialog(update):
+    """Ask before changing anything on the PC. -> dict of choices or None."""
+    import tkinter as tk
+    import ctypes as _ct
+    try:
+        _ct.windll.shcore.SetProcessDpiAwareness(2)
+    except Exception:
+        pass
+    import render as R
+    from PIL import ImageTk
+    st = load_json(STATE_FILE, {})
+    opts = {"autostart": autostart_enabled() if update else True, "shortcut": True,
+            "renew": st.get("renew", True)}
+    result = {}
+    root = tk.Tk()
+    root.title("AI Limits setup")
+    root.resizable(False, False)
+    try:
+        root.iconbitmap(default=sys.executable)
+    except Exception:
+        pass
+    k = root.winfo_fpixels("1i") / 96.0
+    W, H = 420, 468
+    t = R.theme("modern", "dark")
+    cv = tk.Canvas(root, width=int(W * k), height=int(H * k), highlightthickness=0,
+                   bg=t["bg"])
+    cv.pack()
+    item = cv.create_image(0, 0, anchor="nw")
+    hits = []
+
+    def draw():
+        nonlocal hits
+        img, hits = R.installer(W, H, k, t, opts, update)
+        root._img = ImageTk.PhotoImage(img)
+        cv.itemconfig(item, image=root._img)
+
+    def hit(e):
+        lx, ly = e.x / k, e.y / k
+        for (x1, y1, x2, y2), act in hits:
+            if x1 <= lx <= x2 and y1 <= ly <= y2:
+                return act
+        return None
+
+    def click(e):
+        act = hit(e)
+        if not act:
+            return
+        if act.startswith("opt:"):
+            key = act[4:]
+            opts[key] = not opts[key]
+            draw()
+        elif act == "install":
+            result.update(opts)
+            root.destroy()
+        elif act == "cancel":
+            root.destroy()
+
+    cv.bind("<Button-1>", click)
+    cv.bind("<Motion>", lambda e: cv.config(cursor="hand2" if hit(e) else ""))
+    root.bind("<Return>", lambda e: (result.update(opts), root.destroy()))
+    root.bind("<Escape>", lambda e: root.destroy())
+    draw()
+    root.update_idletasks()
+    sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+    root.geometry(f"+{(sw - int(W * k)) // 2}+{(sh - int(H * k)) // 2}")
+    root.lift()
+    root.attributes("-topmost", True)
+    root.after(300, lambda: root.attributes("-topmost", False))
+    root.mainloop()
+    return result or None
+
+
 def self_install():
-    """When run from wherever it was downloaded: copy itself to the user's
-    programs folder, add a Start menu shortcut, start with Windows and launch
-    the installed copy. No admin rights needed. True = this copy should exit."""
+    """When run from wherever it was downloaded: ask the user (install_dialog),
+    then copy itself to the user's programs folder, add the chosen shortcut and
+    startup entry and launch the installed copy. No admin rights needed.
+    True = this copy should exit."""
     if not FROZEN:
         return False
     here = os.path.normcase(os.path.abspath(sys.executable))
@@ -684,8 +763,14 @@ def self_install():
         return False
     import shutil
     import subprocess
-    # kurulu eski surum aciksa kapat (dosya kilitli olmasin); sadece kurulum
-    # klasorundeki exe'yi hedefler, indirilen bu kopyaya dokunmaz
+    choices = install_dialog(update=os.path.exists(target))
+    if choices is None:                 # cancelled: change nothing
+        return True
+    st = load_json(STATE_FILE, {})
+    st["renew"] = bool(choices.get("renew"))
+    save_json(STATE_FILE, st)
+    # close an installed older version so its file isn't locked (only the exe in
+    # the install folder, never this downloaded copy)
     if os.path.exists(target):
         ps = ("Get-CimInstance Win32_Process | ? { $_.ExecutablePath -eq $env:AIL_TARGET } | "
               "% { Stop-Process -Id $_.ProcessId -Force }")
@@ -696,15 +781,27 @@ def self_install():
     _remove_old_version()
     os.makedirs(INSTALL_DIR, exist_ok=True)
     shutil.copy2(sys.executable, target)
-    try:
-        _make_shortcut(target, START_MENU_LNK)
-    except Exception:
-        pass
+    if choices.get("shortcut"):
+        try:
+            _make_shortcut(target, START_MENU_LNK)
+        except Exception:
+            pass
+    else:
+        try:
+            os.remove(START_MENU_LNK)
+        except OSError:
+            pass
     import winreg
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
                         r"Software\Microsoft\Windows\CurrentVersion\Run", 0,
                         winreg.KEY_SET_VALUE) as k:
-        winreg.SetValueEx(k, "AILimits", 0, winreg.REG_SZ, f'"{target}"')
+        if choices.get("autostart"):
+            winreg.SetValueEx(k, "AILimits", 0, winreg.REG_SZ, f'"{target}"')
+        else:
+            try:
+                winreg.DeleteValue(k, "AILimits")
+            except FileNotFoundError:
+                pass
     subprocess.Popen([target], close_fds=True)
     return True
 
@@ -913,6 +1010,9 @@ class App:
         st.setdefault("mascot", True)
         st.setdefault("mode", "cycle")
         st.setdefault("interval", 10)
+        st.setdefault("renew", True)
+        global RENEW_SIGNINS
+        RENEW_SIGNINS = bool(st["renew"])
         R.set_family(st["font"])
         self.hover_bg = "#ffffff" if self.sys_light else "#2e2e2e"
 
@@ -1333,7 +1433,8 @@ class App:
         st = self.state
         return dict(preset=st["preset"], theme=st["theme"], font=st["font"],
                     motion=st["motion"], liquid=st["liquid"], mascot=st["mascot"],
-                    mode=st["mode"], interval=int(st["interval"]), knob_anim=self.knob_anim)
+                    mode=st["mode"], interval=int(st["interval"]), knob_anim=self.knob_anim,
+                    autostart=autostart_enabled(), renew=st["renew"])
 
     def _render_body(self, ss=3):
         from PIL import ImageTk
@@ -1552,6 +1653,15 @@ class App:
             st[act] = not st[act]
             self._knob(act, st[act])
             self.draw_pill()
+        elif act == "renew":
+            global RENEW_SIGNINS
+            st["renew"] = RENEW_SIGNINS = not st["renew"]
+            self._knob(act, st["renew"])
+        elif act == "autostart":
+            on = not autostart_enabled()
+            set_autostart(on)
+            self.auto_var.set(on)
+            self._knob(act, on)
         elif act.startswith("mode:"):
             mode = act.split(":", 1)[1]
             if mode != st["mode"]:

@@ -49,9 +49,11 @@ Services you don't use are simply hidden.
 
 1. Double-click `AILimits.exe`.
 2. If Windows shows "Windows protected your PC", click **More info → Run anyway**.
-   The app isn't code-signed, which is why Windows shows this warning.
-3. AI Limits installs itself to `%LOCALAPPDATA%\Programs\AILimits`, adds a Start menu
-   shortcut and **starts with Windows**. It doesn't need admin rights.
+   The app isn't code-signed yet (see [Code signing policy](#code-signing-policy)).
+3. The installer shows what it will change and lets you turn each item off:
+   **Start with Windows**, **Start menu shortcut** and **Keep sign-ins fresh** (renew
+   expired Claude Code / Codex sign-ins). It installs to `%LOCALAPPDATA%\Programs\AILimits`
+   and doesn't need admin rights.
 4. A short tour opens on first run. You can replay it any time with right-click → **Show tour**.
 
 To update, double-click the new `AILimits.exe`. It closes the old version and replaces it.
@@ -79,17 +81,37 @@ To update, double-click the new `AILimits.exe`. It closes the old version and re
   - **Motion:** Off, Calm, Lively or Wild. Controls the panel's spring, the title animation,
     the liquid waves and how far the cards bounce.
   - **Liquid gauges**, **Mascot**, **Taskbar strip** style and **Switch every** 5/10/20/30 s.
+  - **Start with Windows** and **Keep sign-ins fresh**.
   - **Reset to preset defaults.**
 - **Right-click** for refresh, ChatGPT accounts, start with Windows, the tour, quit and uninstall.
 - **Adding a second ChatGPT account:** right-click → *Add ChatGPT account…* → sign in with
   that account in the browser. If the browser is already signed in to another account, use a
   private window.
 
+## Uninstall
+
+Right-click the strip and choose **Uninstall AI Limits…**. This removes the program, the
+Start menu shortcut, the startup entry and its settings folder.
+
 ## Privacy
 
-Your sign-in tokens are read only on your own PC and are sent only to the service they
-belong to: Anthropic, OpenAI, or the Antigravity app running locally. Nothing is sent
-anywhere else.
+This program will not transfer any information to other networked systems unless
+specifically requested by the user or the person installing or operating it. Your sign-in
+tokens are read only on your own PC and are sent only to the service they belong to:
+Anthropic, OpenAI, or the Antigravity app running locally. There is no analytics or
+telemetry. Details: [Privacy policy](PRIVACY.md).
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by
+[SignPath Foundation](https://signpath.org).
+*(Application pending. Until it's approved, releases are unsigned.)*
+
+- Every `AILimits.exe` on the Releases page is built by
+  [GitHub Actions](../../actions/workflows/build.yml) from the tagged source in this repository.
+- Committers and reviewers: [canahmetutku45](https://github.com/canahmetutku45)
+- Approvers: [canahmetutku45](https://github.com/canahmetutku45)
+- Privacy policy: [PRIVACY.md](PRIVACY.md)
 
 ## For developers
 

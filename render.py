@@ -928,7 +928,7 @@ def settings_header(W, k, t, ss=3):
 def settings_body(W, k, t, s, ss=3):
     """Settings page. s: preset, theme, font, motion, liquid, mascot, mode,
     interval, knob_anim. -> (image, hits, height)"""
-    c = Canvas2x(W, 1100, k, t["bg"], ss)
+    c = Canvas2x(W, 1300, k, t["bg"], ss)
     hits = []
     rs = t.get("rs", 1)
     y = 6
@@ -1021,6 +1021,12 @@ def settings_body(W, k, t, s, ss=3):
     toggle_row("Liquid gauges", "Waves inside the rings while Motion is on",
                s["liquid"], "liquid")
     toggle_row("Mascot", "Your preset's little buddy in the panel", s["mascot"], "mascot")
+
+    label("System")
+    toggle_row("Start with Windows", "Open AI Limits when you sign in to Windows",
+               s.get("autostart", False), "autostart")
+    toggle_row("Keep sign-ins fresh", "Renew expired Claude Code / Codex sign-ins",
+               s.get("renew", True), "renew")
 
     label("Taskbar strip")
     seg([("cycle", "Cycle"), ("rings", "Rings")], s["mode"], "mode")
@@ -1155,3 +1161,80 @@ def _tutorial_art(c, art, W, y1, y2, t, s, dx):
     elif art == "done":
         c.gauge(cx, cy, 36, 3.2, 100, t["ok"], t["track"], lq)
         c.icon("check", cx, cy, 14, t["fg"], 3)
+
+
+# ------------------------------------------------------------------ installer
+INSTALL_OPTIONS = [
+    ("autostart", "Start with Windows",
+     "Adds AI Limits to your startup apps. You can turn this off later in Settings."),
+    ("shortcut", "Start menu shortcut", "Adds AI Limits to the Start menu."),
+    ("renew", "Keep sign-ins fresh",
+     "When your Claude Code or Codex sign-in expires, AI Limits renews it the same way "
+     "those apps do and saves it back to their sign-in file, so you never have to open "
+     "them just to see your limits."),
+]
+
+
+def _wrap(text, size, k, maxw, weight="regular"):
+    f = font(size * k, weight)
+    lines, line = [], ""
+    for wd in text.split():
+        cand = (line + " " + wd).strip()
+        if f.getlength(cand) / k > maxw and line:
+            lines.append(line)
+            line = wd
+        else:
+            line = cand
+    if line:
+        lines.append(line)
+    return lines
+
+
+def installer(W, H, k, t, opts, update=False, ss=3):
+    """Install/update consent window. opts: {key: bool}. -> (image, hits)"""
+    c = Canvas2x(W, H, k, t["bg"], ss)
+    hits = []
+    # mini hero
+    for i, (key, pct, col) in enumerate((("claude", 42, t["ok"]), ("codex", 18, t["ok"]),
+                                         ("antigravity", 71, t["warn"]))):
+        x = 34 + i * 34
+        c.gauge(x, 40, 13, 2.2, pct, col, t["track"])
+        c.logo(key, x, 40, 5.5, t["fg"], "outline", 0.9)
+    c.text(22, 86, ("Update" if update else "Install") + " AI Limits", 20, t["fg"], "bold",
+           anchor="ls")
+    c.text(22, 106, "Your AI plan limits, live on the taskbar.", 12, t["muted"], anchor="ls")
+    y = 124
+    for key, title, desc in INSTALL_OPTIONS:
+        lines = _wrap(desc, 10.5, k, W - 96)
+        h = 34 + 15 * len(lines)
+        on = opts.get(key, True)
+        c.rrect(16, y, W - 16, y + h, 14, fill=t["card"], outline=t["border"])
+        bx, by = 30, y + 14
+        c.rrect(bx, by, bx + 18, by + 18, 5, fill=t["accent"] if on else t["chip"],
+                outline=None if on else t["border"], width=1.4)
+        if on:
+            c.icon("check", bx + 9, by + 9, 6, t["knob"] if t["mode"] == "dark" else "#ffffff",
+                   2)
+        c.text(60, y + 23, title, 12.5, t["fg"], "semibold", anchor="ls")
+        for j, ln in enumerate(lines):
+            c.text(60, y + 39 + j * 15, ln, 10.5, t["muted"], anchor="ls")
+        hits.append(((16, y, W - 16, y + h), "opt:" + key))
+        y += h + 8
+    y += 4
+    for ln in _wrap("Installs to your user folder (no admin rights). AI Limits only talks to "
+                    "the services you already use. Uninstall any time: right-click the "
+                    "strip › Uninstall AI Limits.", 10, k, W - 44):
+        c.text(22, y + 10, ln, 10, t["faint"], anchor="ls")
+        y += 14
+    by = H - 36
+    label = "Update" if update else "Install"
+    bw = measure(12.5, k, label, "semibold") + 44
+    c.rrect(W - 18 - bw, by - 18, W - 18, by + 18, 18, fill=t["fg"])
+    c.text(W - 18 - bw / 2, by, label, 12.5, t["bg"], "semibold", anchor="mm")
+    hits.append(((W - 18 - bw, by - 18, W - 18, by + 18), "install"))
+    cw = measure(12.5, k, "Cancel", "medium") + 36
+    x2 = W - 18 - bw - 8
+    c.rrect(x2 - cw, by - 18, x2, by + 18, 18, fill=t["chip"], outline=t["border"])
+    c.text(x2 - cw / 2, by, "Cancel", 12.5, t["fg"], "medium", anchor="mm")
+    hits.append(((x2 - cw, by - 18, x2, by + 18), "cancel"))
+    return c.image(), hits

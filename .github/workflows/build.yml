@@ -1,0 +1,72 @@
+name: Build
+
+# Every AILimits.exe on the Releases page is built here, from the source in this
+# repository, so anyone can check that the download matches the code.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build AILimits.exe
+        shell: cmd
+        run: build.bat
+
+      - name: Smoke test (data layer imports, renderer draws)
+        shell: cmd
+        run: python -c "import render, mascots; t=render.theme('modern','dark'); render.panel_body(360,1,t,[],set())[0]; print('ok')"
+
+      # When the SignPath Foundation application is approved, the unsigned exe is
+      # sent to SignPath here for signing (each release is approved by hand):
+      # - uses: signpath/github-action-submit-signing-request@v1
+      #   with:
+      #     api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+      #     organization-id: <from SignPath>
+      #     project-slug: AILimits
+      #     signing-policy-slug: release-signing
+      #     github-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      #     wait-for-completion: true
+      #     output-artifact-directory: dist-signed
+
+      - name: Upload artifact
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: AILimits
+          path: dist/AILimits.exe
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: AILimits
+          path: dist
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: AI Limits ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
+          files: dist/AILimits.exe
