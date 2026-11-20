@@ -1,0 +1,7 @@
+# build output (the exe is published on the Releases page instead)
+build/
+dist/
+*.spec
+__pycache__/
+*.pyc
+icon.png
