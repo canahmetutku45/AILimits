@@ -5,3 +5,6 @@ dist/
 __pycache__/
 *.pyc
 icon.png
+
+# local notes, not part of the project
+signpath-application.md
